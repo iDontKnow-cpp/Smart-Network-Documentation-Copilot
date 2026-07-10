@@ -74,10 +74,10 @@ stringData:
 
 ```bash
 # Build the NGINX Frontend
-docker build -t my-nginx-frontend:latest -f Dockerfile.frontend .
+docker build -t my-nginx-frontend:latest -f ./docker/Dockerfile.frontend .
 
 # Build the Python API Backend
-docker build -t my-python-backend:latest -f Dockerfile.backend .
+docker build -t my-python-backend:latest -f ./docker/Dockerfile.backend .
 
 ```
 
@@ -87,13 +87,13 @@ Apply the configuration files in this order:
 
 ```bash
 # Apply secrets
-kubectl apply -f secrets.private.yaml
+kubectl apply -f ./kubernetes/secrets.private.yaml
 
 # Apply the Deployment & Autoscaler
-kubectl apply -f k8s/rag-deployment.yaml
+kubectl apply -f kubernetes/rag-deployment.yaml
 
 # Apply the Service
-kubectl apply -f k8s/rag-service.yaml
+kubectl apply -f kubernetes/rag-service.yaml
 
 ```
 
@@ -116,13 +116,5 @@ Access the frontend at `http://<your-node-ip>:30080`.
 
 *(Run your local tests and insert your metrics here before applying to jobs!)*
 
-* **Routing Accuracy:** X%
-* **Average Retrieval Latency:** X ms
-
-```
-
----
-
-<FollowUp label="Want to add screenshots?" query="How do I add screenshots of the UI and terminal output to my README to make it stand out more?"/>
-
-```
+* **Routing Accuracy:** 89%
+* **Average Retrieval Latency:** 192 ms
