@@ -1,0 +1,88 @@
+---
+# 1. The Deployment
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: rag-deployment
+spec:
+  # We remove the hardcoded 'replicas: 2' here because the HPA will now control this.
+  selector:
+    matchLabels:
+      app: rag-agent
+  template:
+    metadata:
+      labels:
+        app: rag-agent
+    spec:
+      volumes:
+        - name: chroma-storage
+          emptyDir: {}
+          
+      initContainers:
+        - name: data-ingestion
+          image: my-python-backend:latest
+          command: ["python", "ingest.py"]
+          envFrom:
+            - secretRef:
+                name: rag-secrets
+          volumeMounts:
+            - name: chroma-storage
+              mountPath: /app/chroma_db
+
+      containers:
+        # NGINX Frontend Container
+        - name: nginx-frontend
+          image: my-nginx-frontend:latest
+          ports:
+            - containerPort: 80
+          # CRITICAL: HPA requires resource requests to calculate scaling metrics
+          resources:
+            requests:
+              cpu: "100m"
+              memory: "128Mi"
+            limits:
+              cpu: "250m"
+              memory: "256Mi"
+
+        # Python API Backend Container
+        - name: api-server
+          image: my-python-backend:latest
+          command: ["uvicorn", "main:api", "--host", "0.0.0.0", "--port", "8000"]
+          ports:
+            - containerPort: 8000
+          envFrom:
+            - secretRef:
+                name: rag-secrets
+          volumeMounts:
+            - name: chroma-storage
+              mountPath: /app/chroma_db
+          # CRITICAL: HPA requires resource requests to calculate scaling metrics
+          resources:
+            requests:
+              cpu: "250m"
+              memory: "256Mi"
+            limits:
+              cpu: "500m"
+              memory: "512Mi"
+
+---
+# 2. The Horizontal Pod Autoscaler (HPA)
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: rag-autoscaler
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: rag-deployment
+  minReplicas: 1
+  maxReplicas: 5
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          # Scales up when average CPU across all pods hits 70% of requested CPU
+          averageUtilization: 70
