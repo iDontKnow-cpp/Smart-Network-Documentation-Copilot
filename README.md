@@ -114,7 +114,5 @@ Access the frontend at `http://<your-node-ip>:30080`.
 
 ## 📈 Evaluation Metrics
 
-*(Run your local tests and insert your metrics here before applying to jobs!)*
-
 * **Routing Accuracy:** 89%
 * **Average Retrieval Latency:** 192 ms
