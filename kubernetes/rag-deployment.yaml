@@ -1,0 +1,108 @@
+---
+# 1. The Deployment
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: rag-deployment
+spec:
+  selector:
+    matchLabels:
+      app: rag-agent
+  template:
+    metadata:
+      labels:
+        app: rag-agent
+    spec:
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: DoNotSchedule
+          labelSelector:
+            matchLabels:
+              app: rag-agent
+      volumes:
+        - name: chroma-storage
+          emptyDir: {}
+      initContainers:
+        - name: data-ingestion
+          image: ujjwalrajpurohit/smart-network-documentation-copilot-backend:v7
+          imagePullPolicy: Always
+          command: ["python", "ingest.py"]
+          env:
+            - name: PYTHONUNBUFFERED
+              value: "1"
+          envFrom:
+            - secretRef:
+                name: rag-secrets
+          volumeMounts:
+            - name: chroma-storage
+              mountPath: /app/chroma_db
+          resources:
+            requests:
+              cpu: "500m"
+              memory: "512Mi"
+              ephemeral-storage: "512Mi"
+            limits:
+              cpu: "850m"
+              memory: "3.5Gi"
+              ephemeral-storage: "6Gi"
+      containers:
+        # NGINX Frontend Container
+        - name: nginx-frontend
+          image: ujjwalrajpurohit/smart-network-documentation-copilot-frontend:v3
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 80
+          resources:
+            requests:
+              cpu: "100m"
+              memory: "128Mi"
+              ephemeral-storage: "128Mi"
+            limits:
+              cpu: "250m"
+              memory: "256Mi"
+              ephemeral-storage: "256Mi"
+
+        # Python API Backend Container
+        - name: api-server
+          image: ujjwalrajpurohit/smart-network-documentation-copilot-backend:v7
+          imagePullPolicy: Always
+          command: ["uvicorn", "main:api", "--host", "0.0.0.0", "--port", "8000"]
+          ports:
+            - containerPort: 8000
+          envFrom:
+            - secretRef:
+                name: rag-secrets
+          volumeMounts:
+            - name: chroma-storage
+              mountPath: /app/chroma_db
+          resources:
+            requests:
+              cpu: "250m"
+              memory: "256Mi"
+              ephemeral-storage: "256Mi"
+            limits:
+              cpu: "800m"
+              memory: "2024Mi"
+              ephemeral-storage: "6Gi"
+
+---
+# 2. The Horizontal Pod Autoscaler (HPA)
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: rag-autoscaler
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: rag-deployment
+  minReplicas: 1
+  maxReplicas: 5
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 80

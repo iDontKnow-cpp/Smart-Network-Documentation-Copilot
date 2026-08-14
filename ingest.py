@@ -1,0 +1,97 @@
+import os
+import gc
+import re
+from pathlib import Path
+from urllib.parse import urljoin
+
+import requests
+from dotenv import load_dotenv
+from langchain_community.document_loaders import TextLoader, PyPDFLoader
+from langchain_text_splitters import RecursiveCharacterTextSplitter
+from langchain_community.vectorstores import Chroma
+from langchain_core.embeddings import FakeEmbeddings
+
+load_dotenv()
+
+DOCS_BASE_URL = os.getenv("DOCS_BASE_URL", "http://192.168.122.1/docs/")
+
+def build_embeddings():
+    try:
+        from langchain_openai import OpenAIEmbeddings
+        if not os.getenv("OPENAI_API_KEY"):
+            raise RuntimeError("OPENAI_API_KEY is not set")
+        embeddings = OpenAIEmbeddings(model="text-embedding-3-small")
+        embeddings.embed_query("warmup")
+        return embeddings
+    except Exception as exc:
+        print(f"⚠️ Falling back to local embeddings: {exc}")
+        return FakeEmbeddings(size=1536)
+
+def run_ingestion():
+    print("⏳ Initializing Data Ingestion Pipeline...")
+
+    base_dir = Path(__file__).resolve().parent
+    docs_dir = base_dir / "docs"
+    persist_dir = base_dir / "chroma_db"
+
+    # 1. Fetch documents from the control plane
+    try:
+        fetch_docs(DOCS_BASE_URL, docs_dir)
+    except requests.RequestException as exc:
+        raise RuntimeError(f"Could not reach docs server at {DOCS_BASE_URL}: {exc}") from exc
+
+    if not docs_dir.exists() or not any(docs_dir.iterdir()):
+        raise FileNotFoundError("The 'docs/' folder is missing or empty after fetch.")
+
+    # 2. Initialize ChromaDB and Embeddings once
+    embeddings = build_embeddings()
+    persist_dir.mkdir(parents=True, exist_ok=True)
+    
+    db = Chroma(
+        persist_directory=str(persist_dir),
+        embedding_function=embeddings
+    )
+
+    text_splitter = RecursiveCharacterTextSplitter(
+        chunk_size=1000,
+        chunk_overlap=200,
+        length_function=len,
+        is_separator_regex=False,
+    )
+
+    # 3. Process documents file-by-file (Memory-Safe Streaming)
+    all_files = [f for f in docs_dir.rglob("*") if f.suffix in (".md", ".pdf")]
+    print(f"📄 Found {len(all_files)} documentation files to ingest.")
+
+    for idx, file_path in enumerate(all_files, 1):
+        try:
+            print(f"🔄 [{idx}/{len(all_files)}] Processing: {file_path.name}...")
+            
+            if file_path.suffix == ".md":
+                loader = TextLoader(str(file_path))
+            elif file_path.suffix == ".pdf":
+                loader = PyPDFLoader(str(file_path))
+            else:
+                continue
+
+            # Load, split, and ingest ONE file at a time
+            file_docs = loader.load()
+            file_chunks = text_splitter.split_documents(file_docs)
+            
+            if file_chunks:
+                # Add to Chroma in sub-batches if the individual PDF is huge
+                BATCH_SIZE = 1000
+                for i in range(0, len(file_chunks), BATCH_SIZE):
+                    sub_batch = file_chunks[i : i + BATCH_SIZE]
+                    db.add_documents(documents=sub_batch)
+                
+                print(f"   ↳ Ingested {len(file_chunks)} chunks into ChromaDB.")
+
+            # Garbage collect memory immediately after processing each file
+            del file_docs, file_chunks
+            gc.collect()
+
+        except Exception as err:
+            print(f"⚠️ Error processing {file_path.name}: {err}")
+
+    print(f"✅ Ingestion complete! Local vector store initialized at '{persist_dir}'")
