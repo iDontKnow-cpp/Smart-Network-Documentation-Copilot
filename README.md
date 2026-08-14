@@ -200,7 +200,7 @@ Smart-Network-Documentation-Copilot/
 
 ## 📈 Engineering Performance Metrics
 
-* **Agentic Routing Accuracy:** 96% on benchmark domain query sets.
-* **Vector Indexing Footprint:** 380 MB source docs $\rightarrow$ ~140,000 chunks indexed under **< 600 MB peak RAM**.
+* **Agentic Routing Accuracy:** 93.88% on benchmark domain query sets.
+* **Vector Indexing Footprint:** 391.4 MB source docs $\rightarrow$ ~140,000 chunks indexed under **< 600 MB peak RAM**.
 * **Streaming Latency:** First SSE state event delivered in **< 120 ms**.
-* **Average Retrieval Latency:** 189 ms across local vector store queries.
+* **Average Retrieval Latency:** 806.5 ms across local vector store queries.
