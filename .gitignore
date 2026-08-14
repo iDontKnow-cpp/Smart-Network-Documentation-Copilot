@@ -10,3 +10,4 @@ chroma_db/
 /myenv
 doc/aws/cloudwatch-user-guide.pdf
 kubernetes/secret.private.yaml
+.gitignore
