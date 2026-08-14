@@ -8,5 +8,5 @@ chroma_db/
 .git/
 .env.local
 /myenv
-doc/aws
+doc/aws/cloudwatch-user-guide.pdf
 kubernetes/secret.private.yaml
