@@ -40,7 +40,7 @@ spec:
 
         # Python API Backend Container
         - name: api-server
-          image: ujjwalrajpurohit/smart-network-documentation-copilot-backend:v7
+          image: ujjwalrajpurohit/smart-network-documentation-copilot-backend:v8
           imagePullPolicy: Always
           command: ["uvicorn", "main:api", "--host", "0.0.0.0", "--port", "8000"]
           ports:

@@ -13,7 +13,7 @@ spec:
       restartPolicy: Never
       containers:
         - name: data-ingestion
-          image: ujjwalrajpurohit/smart-network-documentation-copilot-backend:v7
+          image: ujjwalrajpurohit/smart-network-documentation-copilot-backend:v8
           imagePullPolicy: Always
           command: ["python", "ingest.py"]
           env:
