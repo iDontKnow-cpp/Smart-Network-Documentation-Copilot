@@ -1,9 +1,11 @@
 import os
 import gc
 import re
+import chromadb
 from pathlib import Path
 from urllib.parse import urljoin
 
+from langchain_core import embeddings
 import requests
 from dotenv import load_dotenv
 from langchain_community.document_loaders import TextLoader, PyPDFLoader
@@ -45,11 +47,16 @@ def run_ingestion():
 
     # 2. Initialize ChromaDB and Embeddings once
     embeddings = build_embeddings()
-    persist_dir.mkdir(parents=True, exist_ok=True)
     
+    # Initialize Chroma HTTP client for network connection
+    chroma_client = chromadb.HttpClient(
+        host=os.getenv("CHROMA_HOST", "chroma-service"),
+        port=int(os.getenv("CHROMA_PORT", 8000)),
+    )
+
     db = Chroma(
-        persist_directory=str(persist_dir),
-        embedding_function=embeddings
+        client=chroma_client,
+        embedding_function=embeddings,
     )
 
     text_splitter = RecursiveCharacterTextSplitter(

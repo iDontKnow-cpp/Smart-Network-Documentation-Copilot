@@ -1,0 +1,83 @@
+---
+# Persistent storage for Chroma's data
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: chroma-pvc
+spec:
+  accessModes:
+    - ReadWriteOnce   
+  resources:
+    requests:
+      storage: 6Gi
+
+---
+# The Chroma server
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: chroma-server
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+    # IMPORTANT: with a ReadWriteOnce PVC, a rolling update
+    # would try to start the new Pod before killing the old one,
+    # both would race to mount the same volume and the new Pod would get
+    # stuck Pending. Recreate fully stops the old Pod first.
+  selector:
+    matchLabels:
+      app: chroma-server
+  template:
+    metadata:
+      labels:
+        app: chroma-server
+    spec:
+      containers:
+        - name: chroma
+          image: chromadb/chroma:1.5.3   
+          ports:
+            - containerPort: 8000
+          env:
+            - name: IS_PERSISTENT
+              value: "TRUE"
+          volumeMounts:
+            - name: chroma-storage
+              mountPath: /data
+          resources:
+            requests:
+              cpu: "250m"
+              memory: "512Mi"
+            limits:
+              cpu: "1"
+              memory: "2Gi"
+          readinessProbe:
+            httpGet:
+              path: /api/v2/heartbeat
+              port: 8000
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /api/v2/heartbeat
+              port: 8000
+            initialDelaySeconds: 15
+            periodSeconds: 20
+      volumes:
+        - name: chroma-storage
+          persistentVolumeClaim:
+            claimName: chroma-pvc
+
+---
+# Internal-only Service. The RAG agent and the ingestion Job talk to Chroma through this Service, not directly to the Pod.
+apiVersion: v1
+kind: Service
+metadata:
+  name: chroma-service
+spec:
+  selector:
+    app: chroma-server
+  ports:
+    - port: 8000
+      targetPort: 8000
+  type: ClusterIP

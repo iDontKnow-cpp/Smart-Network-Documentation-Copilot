@@ -1,5 +1,6 @@
 import os
 import re
+import chromadb
 from typing import TypedDict, Literal, List, Dict, Any
 from dotenv import load_dotenv
 from openai import RateLimitError
@@ -37,8 +38,16 @@ class GraphState(TypedDict):
 llm = ChatOpenAI(model="gpt-4.1", temperature=0)
 embeddings = OpenAIEmbeddings(model="text-embedding-3-small")
 
-# Connect to the local vector store created in Phase 1
-db = Chroma(persist_directory="./chroma_db", embedding_function=embeddings)
+# Connect to the Chroma server over HTTP
+chroma_client = chromadb.HttpClient(
+    host=os.getenv("CHROMA_HOST", "chroma-service"),
+    port=int(os.getenv("CHROMA_PORT", 8000)),
+)
+
+db = Chroma(
+    client=chroma_client,
+    embedding_function=embeddings,
+)
 retriever = db.as_retriever(search_kwargs={"k": 6})
 
 # Initialize the fallback web search tool

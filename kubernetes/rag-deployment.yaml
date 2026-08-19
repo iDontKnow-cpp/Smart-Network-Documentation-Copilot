@@ -20,32 +20,7 @@ spec:
           labelSelector:
             matchLabels:
               app: rag-agent
-      volumes:
-        - name: chroma-storage
-          emptyDir: {}
-      initContainers:
-        - name: data-ingestion
-          image: ujjwalrajpurohit/smart-network-documentation-copilot-backend:v7
-          imagePullPolicy: Always
-          command: ["python", "ingest.py"]
-          env:
-            - name: PYTHONUNBUFFERED
-              value: "1"
-          envFrom:
-            - secretRef:
-                name: rag-secrets
-          volumeMounts:
-            - name: chroma-storage
-              mountPath: /app/chroma_db
-          resources:
-            requests:
-              cpu: "500m"
-              memory: "512Mi"
-              ephemeral-storage: "512Mi"
-            limits:
-              cpu: "850m"
-              memory: "3.5Gi"
-              ephemeral-storage: "6Gi"
+
       containers:
         # NGINX Frontend Container
         - name: nginx-frontend
@@ -73,9 +48,6 @@ spec:
           envFrom:
             - secretRef:
                 name: rag-secrets
-          volumeMounts:
-            - name: chroma-storage
-              mountPath: /app/chroma_db
           resources:
             requests:
               cpu: "250m"

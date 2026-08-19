@@ -1,0 +1,37 @@
+---
+# Runs ingest.py exactly ONCE, against the standalone Chroma server —
+# not on every Pod start. Re-run this manually 
+# whenever your source documents actually change.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: chroma-ingestion
+spec:
+  backoffLimit: 2
+  template:
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: data-ingestion
+          image: ujjwalrajpurohit/smart-network-documentation-copilot-backend:v7
+          imagePullPolicy: Always
+          command: ["python", "ingest.py"]
+          env:
+            - name: PYTHONUNBUFFERED
+              value: "1"
+            - name: CHROMA_HOST
+              value: "chroma-service"
+            - name: CHROMA_PORT
+              value: "8000"
+          envFrom:
+            - secretRef:
+                name: rag-secrets
+          resources:
+            requests:
+              cpu: "500m"
+              memory: "512Mi"
+              ephemeral-storage: "512Mi"
+            limits:
+              cpu: "850m"
+              memory: "3.5Gi"
+              ephemeral-storage: "6Gi"
