@@ -1,15 +1,17 @@
 ---
 # Persistent storage for Chroma's data
 apiVersion: v1
-kind: PersistentVolumeClaim
+kind: PersistentVolume
 metadata:
-  name: chroma-pvc
+  name: chroma-pv
 spec:
+  capacity:
+    storage: 6Gi
   accessModes:
-    - ReadWriteOnce   
-  resources:
-    requests:
-      storage: 6Gi
+    - ReadWriteOnce
+  persistentVolumeReclaimPolicy: Retain
+  hostPath:
+    path: /var/data/chroma
 
 ---
 # The Chroma server
