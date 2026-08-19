@@ -85,16 +85,21 @@ To avoid the cgroup memory limit breaches seen during initial development with l
 * `kubectl` configured with cluster access
 * `metrics-server` installed in-cluster if you want the HPA to actually scale (not included by default on `kubeadm` clusters)
 * API keys for **OpenAI** and **Tavily**
-* **At least 8 GB RAM available to the ingestion container if using the `:v6` backend tag.** The `:v7` tag's file-by-file ingestion is memory-safe on much smaller nodes — see the tag comparison in Roadmap below before choosing.
+* **At least 8 GB RAM available to the ingestion container if using the `:v6` backend tag.** The `:v8` tag's file-by-file ingestion is memory-safe on much smaller nodes — see the tag comparison in Roadmap below before choosing.
 
 ---
 
-### 1. Clone the Repository
+### 1. Clone the Repository 
 
 ```bash
 git clone git@github.com:iDontKnow-cpp/Smart-Network-Documentation-Copilot.git
 cd Smart-Network-Documentation-Copilot
 
+```
+To pull the pre-build images from docker hub. (Multi-platform linux build for both arm64 and amd64)
+```bash
+docker pull ujjwalrajpurohit/smart-network-documentation-copilot-backend:v8
+docker pull ujjwalrajpurohit/smart-network-documentation-copilot-frontend:v3
 ```
 
 ---
@@ -124,23 +129,28 @@ stringData:
 # Backend — includes the ingestion engine and API server.
 # Currently built for linux/amd64 only; multi-arch (arm64) is a planned
 # follow-up, see Roadmap below.
-docker buildx build --platform linux/amd64 \
-  -t ujjwalrajpurohit/smart-network-documentation-copilot-backend:v7 \
+docker buildx build --platform linux/amd64,linux/arm64 \
+  -t <username>/<docker_repositry_name>:<tag> \
   -f docker/dockerfile.backend --push .
 
 # Frontend — built multi-platform.
 docker buildx build --platform linux/amd64,linux/arm64 \
-  -t ujjwalrajpurohit/smart-network-documentation-copilot-frontend:v3 \
+  -t <username>/<docker_repositry_name>:<tag> \
   -f docker/dockerfile.frontend --push .
 
 ```
 
 ---
 
-### 4. Deploy to Kubernetes
+### 4. Deploy to Kubernetes 
+Order matters.
 
 ```bash
 kubectl apply -f kubernetes/secret.private.yaml
+kubectl apply -f kubernetes/chroma-server.yaml
+kubectl wait --for=condition=available deployment/chroma-server --timeout=60s
+kubectl apply -f kubernetes/chroma-ingestion-job.yaml
+kubectl wait --for=condition=complete job/chroma-ingestion --timeout=600s
 kubectl apply -f kubernetes/rag-deployment.yaml
 kubectl apply -f kubernetes/rag-service.yaml
 
@@ -174,22 +184,24 @@ URL: http://<your-node-ip>:30080
 
 ```text
 Smart-Network-Documentation-Copilot/
-├── docs/                      # Documentation PDFs and Markdown files for ingestion
+├── docs/                           # Documentation PDFs and Markdown files for ingestion
 ├── docker/
-│   ├── dockerfile.backend     # Python backend runtime container
-│   └── dockerfile.frontend    # Multi-stage NGINX + React build container
+│   ├── dockerfile.backend          # Python backend runtime container
+│   └── dockerfile.frontend         # Multi-stage NGINX + React build container
 ├── kubernetes/
-│   ├── rag-deployment.yaml    # Deployment manifest (initContainer, limits, volumes, HPA)
-│   ├── rag-service.yaml       # NodePort service definition
-│   └── secret.private.yaml    # API credentials (git-ignored)
-├── frontend/                  # React.js SPA source code
-│   ├── src/                   # SSE streaming components & UI
+│   ├── chroma-server.yaml          # Server to access the chromaDB over HTTP for all pods
+│   ├── chroma-ingestion-job.yaml   # Job to create the chromaDB
+│   ├── rag-deployment.yaml         # Deployment manifest (initContainer, limits, volumes, HPA)
+│   ├── rag-service.yaml            # NodePort service definition
+│   └── secret.private.yaml         # API credentials (git-ignored)
+├── frontend/                       # React.js SPA source code
+│   ├── src/                        # SSE streaming components & UI
 │   └── tailwind.config.js
-├── main.py                    # FastAPI app entrypoint & SSE stream endpoint
-├── graph.py                   # LangGraph state machine & routing workflow
-├── ingest.py                  # File-by-file, memory-bounded vector ingestion script
-├── eval_router.py             # Router accuracy evaluation harness
-├── nginx.conf                 # Reverse proxy config for unbuffered SSE streaming
+├── main.py                         # FastAPI app entrypoint & SSE stream endpoint
+├── graph.py                        # LangGraph state machine & routing workflow
+├── ingest.py                       # File-by-file, memory-bounded vector ingestion script
+├── eval_router.py                  # Router accuracy evaluation harness
+├── nginx.conf                      # Reverse proxy config for unbuffered SSE streaming
 └── requirements.txt
 
 ```
@@ -217,10 +229,7 @@ Corpus scale actually ingested and confirmed via ingestion logs: **28 source fil
 
 ## 🗺️ Roadmap
 
-* **Multi-arch backend image.** The frontend (`:v3`) is already built for `linux/amd64` + `linux/arm64`. The backend has two live tags with a trade-off between them right now:
-  * `:v6` — multi-arch (`amd64`/`arm64`), uses the original all-at-once ingestion approach. Works fine on hosts with **8 GB+ RAM** available to the ingestion container; will OOM on smaller nodes (confirmed during development on a 1.6–3.5 GB constrained worker VM).
-  * `:v7` — `linux/amd64`-only, uses the memory-safe file-by-file ingestion pipeline. The right choice for resource-constrained environments (small VMs, edge nodes, home-lab clusters).
-
-  Rebuilding `:v7`'s ingestion code as a genuine multi-arch tag is the next step, so constrained environments don't have to choose between architecture support and memory safety.
-* **Measured ingestion peak-memory figure.** The file-by-file design is intended to keep memory bounded regardless of corpus size, but a live-sampled peak (e.g. via `kubectl top pod --containers` polled during an active ingestion run) hasn't been captured yet and would replace this qualitative description with a real number.
+* **Accessability** : can be accessed from anywhere.
 * **Improve edge-case routing accuracy** (currently 76.9%, the weakest category in the eval set above).
+* **Files and Documents** Adding the feature to upload images, docs and pdf.
+* **PostgreSQL**: add SQL for metadata storage and caching, so model can remember the previous queries in the chat. 
