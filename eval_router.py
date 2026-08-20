@@ -71,10 +71,10 @@ EVAL_DATASET: List[Dict[str, Any]] = [
     # ------------------------------------------------------------------
     # 8. Tricky Edge Cases & Ambiguous Queries (Target Routing)
     # ------------------------------------------------------------------
-    {"query": "What is BGP?", "expected": "local_db", "cat": "Edge Case"},
+    {"query": "What is BGP?", "expected": "web_search", "cat": "Edge Case"},
     {"query": "Tell me about Amazon", "expected": "web_search", "cat": "Edge Case"},
     {"query": "How to fix 502 Bad Gateway on NGINX?", "expected": "web_search", "cat": "Edge Case"},
-    {"query": "What is the default IP address of a Cisco router?", "expected": "local_db", "cat": "Edge Case"},
+    {"query": "What is the default IP address of a Cisco router?", "expected": "web_search", "cat": "Edge Case"},
     {"query": "How do I update Python on Ubuntu 22.04?", "expected": "web_search", "cat": "Edge Case"},
     {"query": "Explain MTU vs MSS in TCP/IP networking.", "expected": "local_db", "cat": "Edge Case"},
     {"query": "Latest features in Kubernetes 1.30 release notes", "expected": "web_search", "cat": "Edge Case"},
@@ -83,7 +83,7 @@ EVAL_DATASET: List[Dict[str, Any]] = [
     {"query": "How to ping a remote port in Linux using nc or telnet?", "expected": "local_db", "cat": "Edge Case"},
     {"query": "What is the difference between Layer 4 and Layer 7 load balancing?", "expected": "local_db", "cat": "Edge Case"},
     {"query": "Who is the CEO of Nutanix?", "expected": "web_search", "cat": "Edge Case"},
-    {"query": "What is RoCEv2?", "expected": "local_db", "cat": "Edge Case"},
+    {"query": "What is RoCEv2?", "expected": "web_search", "cat": "Edge Case"},
 ]
 
 

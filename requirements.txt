@@ -4,8 +4,11 @@ langchain-openai>=0.1.0
 langchain-community>=0.0.20
 chromadb>=0.4.24
 fastapi>=0.110.0
+python-multipart>=0.0.9
 uvicorn>=0.28.0
 tavily-python>=0.3.1
 pydantic>=2.6.0
 python-dotenv>=1.0.1
 pypdf
+langchain-redis>=0.2.0
+redis>=7.0.0

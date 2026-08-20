@@ -1,14 +1,23 @@
 import { useState, useRef, useEffect } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import { Send, Loader2, Server, Globe, Cpu } from 'lucide-react';
+import { Send, Loader2, Server, Globe, Cpu, Paperclip, X } from 'lucide-react';
 
 export default function App() {
+  const [chatId] = useState(() => crypto.randomUUID());
   const [messages, setMessages] = useState([]);
   const [input, setInput] = useState('');
   const [agentStatus, setAgentStatus] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  const [isUploading, setIsUploading] = useState(false);
+  const [uploadStatus, setUploadStatus] = useState('');
+  const [images, setImages] = useState([]);
   const messagesEndRef = useRef(null);
+  const fileInputRef = useRef(null);
+
+  useEffect(() => () => {
+    fetch(`api/chat/${chatId}/uploads`, { method: 'DELETE', keepalive: true }).catch(() => {});
+  }, [chatId]);
 
   // Auto-scroll to bottom
   useEffect(() => {
@@ -17,7 +26,7 @@ export default function App() {
 
   const sendMessage = async (e) => {
     e.preventDefault();
-    if (!input.trim()) return;
+    if (!input.trim() && images.length === 0) return;
 
     const userMessage = { role: 'user', content: input };
     const newMessages = [...messages, userMessage];
@@ -33,6 +42,8 @@ export default function App() {
         body: JSON.stringify({
           message: userMessage.content,
           history: newMessages.map((msg) => ({ role: msg.role, content: msg.content })),
+          chat_id: chatId,
+          images: images.map((image) => image.filename),
         }),
       });
 
@@ -86,6 +97,33 @@ export default function App() {
       console.error('Fetch error:', error);
       setAgentStatus('Error: Connection failed.');
       setIsLoading(false);
+    }
+  };
+
+  const uploadFiles = async (event) => {
+    const files = Array.from(event.target.files || []);
+    event.target.value = '';
+    if (files.length === 0) return;
+
+    setIsUploading(true);
+    setUploadStatus(`Uploading ${files.length} file${files.length === 1 ? '' : 's'}...`);
+    try {
+      for (const file of files) {
+        const formData = new FormData();
+        formData.append('file', file);
+        formData.append('chat_id', chatId);
+        const response = await fetch('api/upload', { method: 'POST', body: formData });
+        const result = await response.json();
+        if (!response.ok) throw new Error(result.detail || 'Upload failed.');
+        if (result.kind === 'image') setImages((current) => [...current, result]);
+        setUploadStatus(result.kind === 'pdf'
+          ? `${result.filename} added to docs/${result.vendor} and indexed.`
+          : `${result.filename} attached to this chat.`);
+      }
+    } catch (error) {
+      setUploadStatus(`Upload error: ${error.message}`);
+    } finally {
+      setIsUploading(false);
     }
   };
 
@@ -178,7 +216,31 @@ export default function App() {
 
           {/* Input Area */}
           <div className="border-t border-slate-800 px-5 py-4">
+            {images.length > 0 && (
+              <div className="mb-3 flex flex-wrap gap-2">
+                {images.map((image) => (
+                  <div key={image.filename} className="flex items-center gap-2 rounded-full border border-slate-700 bg-slate-900 px-3 py-1 text-sm text-slate-300">
+                    <span>{image.filename}</span>
+                    <button type="button" onClick={() => setImages((current) => current.filter((item) => item.filename !== image.filename))} aria-label={`Remove ${image.filename}`} className="text-slate-400 hover:text-white">
+                      <X className="h-3.5 w-3.5" />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+            {uploadStatus && <p className="mb-2 text-xs text-slate-400">{uploadStatus}</p>}
             <form onSubmit={sendMessage} className="flex items-center gap-3">
+              <input ref={fileInputRef} type="file" accept="application/pdf,image/jpeg,image/png,image/gif,image/webp" multiple onChange={uploadFiles} className="hidden" />
+              <button
+                type="button"
+                onClick={() => fileInputRef.current?.click()}
+                disabled={isLoading || isUploading}
+                aria-label="Attach PDF or image"
+                title="Attach PDF or image"
+                className="inline-flex h-12 w-12 shrink-0 items-center justify-center rounded-3xl border border-slate-800 bg-slate-950/80 text-slate-300 transition hover:border-indigo-500 hover:text-white disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {isUploading ? <Loader2 className="h-5 w-5 animate-spin" /> : <Paperclip className="h-5 w-5" />}
+              </button>
               <input
                 type="text"
                 value={input}
@@ -189,7 +251,7 @@ export default function App() {
               />
               <button
                 type="submit"
-                disabled={isLoading || !input.trim()}
+                disabled={isLoading || isUploading || (!input.trim() && images.length === 0)}
                 className="inline-flex h-12 w-12 items-center justify-center rounded-3xl bg-indigo-600 text-white transition hover:bg-indigo-500 disabled:cursor-not-allowed disabled:opacity-50"
               >
                 <Send className="w-5 h-5" />

@@ -1,10 +1,12 @@
 import json
 import os
-from fastapi import FastAPI
+from pathlib import Path
+from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 from typing import Any
+from uploads import IMAGE_TYPES, chat_image_path, cleanup_expired_chat_uploads, delete_chat_uploads, image_data_url, save_image, save_pdf
 
 # Import the compiled LangGraph app from Phase 2
 from graph import app as agent_app
@@ -29,6 +31,29 @@ class ChatMessage(BaseModel):
 class ChatRequest(BaseModel):
     message: str
     history: list[ChatMessage] = Field(default_factory=list)
+    chat_id: str = "anonymous"
+    images: list[str] = Field(default_factory=list)
+
+
+@api.post("/api/upload")
+async def upload_file(file: UploadFile = File(...), chat_id: str = Form("anonymous")):
+    cleanup_expired_chat_uploads()
+    content_type = (file.content_type or "").lower()
+    filename = file.filename or "upload"
+    if content_type == "application/pdf" or filename.lower().endswith(".pdf"):
+        try:
+            return save_pdf(file, filename)
+        except Exception as exc:
+            raise HTTPException(status_code=422, detail=f"Could not ingest PDF: {exc}") from exc
+    if content_type in IMAGE_TYPES or Path(filename).suffix.lower() in {".jpg", ".jpeg", ".png", ".gif", ".webp"}:
+        return save_image(file, filename, chat_id)
+    raise HTTPException(status_code=415, detail="Only PDF, JPEG, PNG, GIF, and WebP files are supported.")
+
+
+@api.delete("/api/chat/{chat_id}/uploads")
+async def delete_uploads(chat_id: str):
+    delete_chat_uploads(chat_id)
+    return {"status": "ok"}
 
 @api.get("/")
 async def root():
@@ -54,6 +79,7 @@ async def chat_endpoint_json(request: ChatRequest):
         "source": "local_db",
         "answer": "",
         "history": [msg.dict() for msg in request.history],
+        "images": [image_data_url(str(chat_image_path(request.chat_id, filename))) for filename in request.images],
     })
     return {
         "answer": result.get("answer"),
@@ -72,6 +98,11 @@ async def chat_endpoint(request: ChatRequest):
         yield f"data: {json.dumps({'type': 'status', 'message': 'Agent initialized. Analyzing domain...'})}\n\n"
 
         request_history = [msg.dict() for msg in request.history]
+        images = []
+        for filename in request.images:
+            path = chat_image_path(request.chat_id, filename)
+            if path.is_file():
+                images.append(image_data_url(str(path)))
         
         # Stream the graph execution step-by-step
         # astream() yields the output of each node as it completes
@@ -81,6 +112,7 @@ async def chat_endpoint(request: ChatRequest):
             "source": "local_db",
             "answer": "",
             "history": request_history,
+            "images": images,
         }):
             for node_name, state_update in output.items():
                 

@@ -10,12 +10,16 @@ from langchain_openai import ChatOpenAI, OpenAIEmbeddings
 from langchain_community.vectorstores import Chroma
 from langchain_community.tools.tavily_search import TavilySearchResults
 from langchain_core.prompts import ChatPromptTemplate
+from langchain_core.messages import HumanMessage
 from langgraph.graph import StateGraph, END
+from langchain_core.globals import set_llm_cache
+from langchain_redis import RedisSemanticCache
 
 # Load environment variables (OpenAI and Tavily keys)
 load_dotenv()
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 TAVILY_API_KEY = os.getenv("TAVILY_API_KEY")
+REDIS_URL = os.getenv("REDIS_URL", "redis://redis-service:6379")
 
 if OPENAI_API_KEY is None:
     raise EnvironmentError(
@@ -32,11 +36,25 @@ class GraphState(TypedDict):
     source: str  # Tracks if we used 'local_db' or 'web_search'
     answer: str
     history: List[Dict[str, Any]]
+    images: List[str]
 
 # --- 2. Initialize Core Components ---
 # We use a higher-quality model for the backend routing and generation
-llm = ChatOpenAI(model="gpt-4.1", temperature=0)
 embeddings = OpenAIEmbeddings(model="text-embedding-3-small")
+
+try:
+    semantic_cache = RedisSemanticCache(
+        embeddings=embeddings,
+        redis_url=REDIS_URL,
+        distance_threshold=0.15,  # Lower = stricter match (0.10–0.20 recommended)
+        ttl=86400,                # Optional: expire cache entries after 24 hours
+    )
+    set_llm_cache(semantic_cache)
+    print("⚡ Redis Semantic Cache activated successfully.")
+except Exception as e:
+    print(f"⚠️ Redis Cache initialization failed: {e}. Proceeding without caching.")
+
+llm = ChatOpenAI(model="gpt-4.1", temperature=0)
 
 # Connect to the Chroma server over HTTP
 chroma_client = chromadb.HttpClient(
@@ -135,8 +153,13 @@ def retrieve_any_source(state: GraphState):
 def generate_response(state: GraphState):
     print("✍️  [Generation Node] Synthesizing final answer...")
     
+    # Keep only the last 10 messages (5 user queries + 5 assistant answers)
+    MAX_HISTORY_MESSAGES = 10
+    recent_history = state.get("history", [])[-MAX_HISTORY_MESSAGES:]
+
     history_text = "\n".join([
-        f"{message['role'].capitalize()}: {message['content']}" for message in state.get("history", [])
+        f"{message['role'].capitalize()}: {message['content']}"
+        for message in recent_history
     ])
 
     prompt = ChatPromptTemplate.from_messages([
@@ -153,12 +176,23 @@ def generate_response(state: GraphState):
     fallback_chain = fallback_prompt | llm
     refusal_text = "I cannot answer this based on the retrieved data."
 
-    def synthesize(context: str, question: str, history: str):
-        result = chain.invoke({
-            "history": history,
-            "context": context,
-            "question": question
-        })
+    def synthesize(context: str, question: str, history: str, images: List[str]):
+        if images:
+            formatted_messages = prompt.format_messages(
+                history=history,
+                context=context,
+                question=question,
+            )
+            user_content: List[str | Dict[str, Any]] = [{"type": "text", "text": str(formatted_messages[-1].content)}]
+            user_content.extend({"type": "image_url", "image_url": {"url": image}} for image in images)
+            formatted_messages[-1] = HumanMessage(content=user_content)
+            result = llm.invoke(formatted_messages)
+        else:
+            result = chain.invoke({
+                "history": history,
+                "context": context,
+                "question": question,
+            })
         return getattr(result, "content", str(result)).strip()
 
     def synthesize_with_web(local_context: str, web_context: str, question: str, history: str):
@@ -178,7 +212,7 @@ def generate_response(state: GraphState):
         return cleaned if cleaned else answer
 
     try:
-        answer = synthesize(state["context"], state["question"], history_text)
+        answer = synthesize(state["context"], state["question"], history_text, state.get("images", []))
     except RateLimitError as e:
         print("   ⚠️ OpenAI rate limit / quota error while generating response:", e)
         return {"answer": "OpenAI quota/rate limit error occurred. Please check your API quota and try again.", "source": state["source"]}
@@ -253,6 +287,7 @@ if __name__ == "__main__":
             "source": "local_db",
             "answer": "",
             "history": [],
+            "images": [],
         })
         print(f"\nFinal Output:\n{result1['answer']}\n")
     except Exception as e:
@@ -269,6 +304,7 @@ if __name__ == "__main__":
             "source": "web_search",
             "answer": "",
             "history": [],
+            "images": [],
         })
         print(f"\nFinal Output:\n{result2['answer']}")
     except Exception as e:
