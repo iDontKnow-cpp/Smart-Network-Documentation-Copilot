@@ -42,7 +42,7 @@ async def upload_file(file: UploadFile = File(...), chat_id: str = Form("anonymo
     filename = file.filename or "upload"
     if content_type == "application/pdf" or filename.lower().endswith(".pdf"):
         try:
-            return save_pdf(file, filename)
+            return save_pdf(file, filename, chat_id)
         except Exception as exc:
             raise HTTPException(status_code=422, detail=f"Could not ingest PDF: {exc}") from exc
     if content_type in IMAGE_TYPES or Path(filename).suffix.lower() in {".jpg", ".jpeg", ".png", ".gif", ".webp"}:

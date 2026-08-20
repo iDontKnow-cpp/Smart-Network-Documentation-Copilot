@@ -1,5 +1,6 @@
 import os
 import re
+from pathlib import Path
 import chromadb
 from typing import TypedDict, Literal, List, Dict, Any
 from dotenv import load_dotenv
@@ -13,7 +14,11 @@ from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.messages import HumanMessage
 from langgraph.graph import StateGraph, END
 from langchain_core.globals import set_llm_cache
-from langchain_redis import RedisSemanticCache
+
+try:
+    from langchain_redis import RedisSemanticCache
+except Exception:
+    RedisSemanticCache = None
 
 # Load environment variables (OpenAI and Tavily keys)
 load_dotenv()
@@ -43,6 +48,8 @@ class GraphState(TypedDict):
 embeddings = OpenAIEmbeddings(model="text-embedding-3-small")
 
 try:
+    if RedisSemanticCache is None:
+        raise RuntimeError("Redis cache adapter is unavailable for the installed LangChain version")
     semantic_cache = RedisSemanticCache(
         embeddings=embeddings,
         redis_url=REDIS_URL,
@@ -56,10 +63,15 @@ except Exception as e:
 
 llm = ChatOpenAI(model="gpt-4.1", temperature=0)
 
-# Connect to the Chroma server over HTTP
-chroma_client = chromadb.HttpClient(
-    host=os.getenv("CHROMA_HOST", "chroma-service"),
-    port=int(os.getenv("CHROMA_PORT", 8000)),
+# Kubernetes Chroma server configuration:
+# chroma_client = chromadb.HttpClient(
+#     host=os.getenv("CHROMA_HOST", "chroma-service"),
+#     port=int(os.getenv("CHROMA_PORT", 8000)),
+# )
+
+# Local ChromaDB configuration for running graph.py from this repository.
+chroma_client = chromadb.PersistentClient(
+    path=str(Path(__file__).resolve().parent / "chroma_db"),
 )
 
 db = Chroma(

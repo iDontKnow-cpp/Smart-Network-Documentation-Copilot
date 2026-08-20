@@ -113,11 +113,17 @@ export default function App() {
         formData.append('file', file);
         formData.append('chat_id', chatId);
         const response = await fetch('api/upload', { method: 'POST', body: formData });
-        const result = await response.json();
+        const responseText = await response.text();
+        let result;
+        try {
+          result = responseText ? JSON.parse(responseText) : {};
+        } catch {
+          throw new Error(`Server returned ${response.status}: ${responseText || 'empty response'}`);
+        }
         if (!response.ok) throw new Error(result.detail || 'Upload failed.');
         if (result.kind === 'image') setImages((current) => [...current, result]);
         setUploadStatus(result.kind === 'pdf'
-          ? `${result.filename} added to docs/${result.vendor} and indexed.`
+          ? `${result.filename} stored temporarily in this chat and indexed.`
           : `${result.filename} attached to this chat.`);
       }
     } catch (error) {
