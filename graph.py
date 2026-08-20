@@ -64,15 +64,15 @@ except Exception as e:
 llm = ChatOpenAI(model="gpt-4.1", temperature=0)
 
 # Kubernetes Chroma server configuration:
-# chroma_client = chromadb.HttpClient(
-#     host=os.getenv("CHROMA_HOST", "chroma-service"),
-#     port=int(os.getenv("CHROMA_PORT", 8000)),
-# )
+chroma_client = chromadb.HttpClient(
+     host=os.getenv("CHROMA_HOST", "chroma-service"),
+     port=int(os.getenv("CHROMA_PORT", 8000)),
+)
 
 # Local ChromaDB configuration for running graph.py from this repository.
-chroma_client = chromadb.PersistentClient(
-    path=str(Path(__file__).resolve().parent / "chroma_db"),
-)
+#chroma_client = chromadb.PersistentClient(
+#    path=str(Path(__file__).resolve().parent / "chroma_db"),
+#)
 
 db = Chroma(
     client=chroma_client,
