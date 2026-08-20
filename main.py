@@ -5,6 +5,7 @@ from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
+from starlette.concurrency import run_in_threadpool
 from typing import Any
 from uploads import IMAGE_TYPES, chat_image_path, cleanup_expired_chat_uploads, delete_chat_uploads, image_data_url, save_image, save_pdf
 
@@ -42,11 +43,11 @@ async def upload_file(file: UploadFile = File(...), chat_id: str = Form("anonymo
     filename = file.filename or "upload"
     if content_type == "application/pdf" or filename.lower().endswith(".pdf"):
         try:
-            return save_pdf(file, filename, chat_id)
+            return await run_in_threadpool(save_pdf, file, filename, chat_id)
         except Exception as exc:
             raise HTTPException(status_code=422, detail=f"Could not ingest PDF: {exc}") from exc
     if content_type in IMAGE_TYPES or Path(filename).suffix.lower() in {".jpg", ".jpeg", ".png", ".gif", ".webp"}:
-        return save_image(file, filename, chat_id)
+        return await run_in_threadpool(save_image, file, filename, chat_id)
     raise HTTPException(status_code=415, detail="Only PDF, JPEG, PNG, GIF, and WebP files are supported.")
 
 
