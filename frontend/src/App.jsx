@@ -123,7 +123,7 @@ export default function App() {
         if (!response.ok) throw new Error(result.detail || 'Upload failed.');
         if (result.kind === 'image') setImages((current) => [...current, result]);
         setUploadStatus(result.kind === 'pdf'
-          ? `${result.filename} stored temporarily in this chat and indexed.`
+          ? `${result.filename} stored temporarily in this chat and queued for indexing.`
           : `${result.filename} attached to this chat.`);
       }
     } catch (error) {

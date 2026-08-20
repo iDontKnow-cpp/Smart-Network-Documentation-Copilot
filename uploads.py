@@ -10,6 +10,7 @@ import uuid
 from pathlib import Path
 
 import chromadb
+from pypdf import PdfReader
 from langchain_community.document_loaders import PyPDFLoader
 from langchain_community.vectorstores import Chroma
 from langchain_openai import OpenAIEmbeddings
@@ -68,36 +69,48 @@ def ingest_pdf(file_path: Path, chat_id: str) -> int:
             chunk.metadata["chat_id"] = chat_id
         _vector_store().add_documents(chunks, ids=chunk_ids)
         manifest_path = CHAT_UPLOADS_DIR / chat_id / ".vector_ids.json"
-        manifest_path.write_text(json.dumps(chunk_ids), encoding="utf-8")
+        existing_ids = []
+        if manifest_path.is_file():
+            try:
+                existing_ids = json.loads(manifest_path.read_text(encoding="utf-8"))
+            except (json.JSONDecodeError, OSError):
+                existing_ids = []
+        manifest_path.write_text(json.dumps(existing_ids + chunk_ids), encoding="utf-8")
     del documents, chunks
     gc.collect()
     return chunk_count
 
 
-def save_pdf(upload_file, filename: str, chat_id: str) -> dict:
+def save_pdf(upload_file, filename: str, chat_id: str, ingest: bool = True) -> dict:
+    contents = upload_file.file.read()
+    return save_pdf_contents(contents, filename, chat_id, ingest=ingest)
+
+
+def save_pdf_contents(contents: bytes, filename: str, chat_id: str, ingest: bool = True) -> dict:
     cleanup_expired_chat_uploads()
     safe_chat_id = re.sub(r"[^A-Za-z0-9_-]", "_", chat_id)[:100] or "anonymous"
     safe_name = _safe_filename(filename)
     staging_path = CHAT_UPLOADS_DIR / safe_chat_id / "docs" / "other" / safe_name
     staging_path.parent.mkdir(parents=True, exist_ok=True)
-    with staging_path.open("wb") as destination:
-        shutil.copyfileobj(upload_file.file, destination)
+    staging_path.write_bytes(contents)
 
     destination = staging_path
     try:
-        first_page = PyPDFLoader(str(staging_path)).load()[0].page_content
+        reader = PdfReader(str(staging_path))
+        first_page = reader.pages[0].extract_text() if reader.pages else ""
         vendor = _vendor_for_pdf(safe_name, first_page)
         destination = CHAT_UPLOADS_DIR / safe_chat_id / "docs" / vendor / safe_name
         destination.parent.mkdir(parents=True, exist_ok=True)
         if destination != staging_path:
             shutil.move(staging_path, destination)
-        chunks = ingest_pdf(destination, safe_chat_id)
+        chunks = ingest_pdf(destination, safe_chat_id) if ingest else None
         return {
             "filename": safe_name,
             "kind": "pdf",
             "vendor": vendor,
             "chunks": chunks,
             "temporary": True,
+            "processing": not ingest,
         }
     except Exception:
         staging_path.unlink(missing_ok=True)
@@ -134,6 +147,13 @@ def chat_image_path(chat_id: str, filename: str) -> Path:
     if path.parent != chat_dir:
         raise ValueError("Invalid chat attachment path")
     return path
+
+
+def chat_pdf_path(chat_id: str, vendor: str, filename: str) -> Path:
+    safe_chat_id = re.sub(r"[^A-Za-z0-9_-]", "_", chat_id)[:100] or "anonymous"
+    safe_vendor = vendor if vendor in ALLOWED_VENDORS else "other"
+    safe_name = _safe_filename(filename)
+    return CHAT_UPLOADS_DIR / safe_chat_id / "docs" / safe_vendor / safe_name
 
 
 def image_data_url(path: str) -> str:

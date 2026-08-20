@@ -1,13 +1,14 @@
 import json
 import os
+import re
 from pathlib import Path
-from fastapi import FastAPI, File, Form, HTTPException, UploadFile
+from fastapi import BackgroundTasks, FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 from starlette.concurrency import run_in_threadpool
 from typing import Any
-from uploads import IMAGE_TYPES, chat_image_path, cleanup_expired_chat_uploads, delete_chat_uploads, image_data_url, save_image, save_pdf
+from uploads import IMAGE_TYPES, chat_image_path, chat_pdf_path, cleanup_expired_chat_uploads, delete_chat_uploads, image_data_url, ingest_pdf, save_image, save_pdf_contents
 
 # Import the compiled LangGraph app from Phase 2
 from graph import app as agent_app
@@ -37,13 +38,22 @@ class ChatRequest(BaseModel):
 
 
 @api.post("/api/upload")
-async def upload_file(file: UploadFile = File(...), chat_id: str = Form("anonymous")):
+async def upload_file(
+    background_tasks: BackgroundTasks,
+    file: UploadFile = File(...),
+    chat_id: str = Form("anonymous"),
+):
     cleanup_expired_chat_uploads()
     content_type = (file.content_type or "").lower()
     filename = file.filename or "upload"
     if content_type == "application/pdf" or filename.lower().endswith(".pdf"):
         try:
-            return await run_in_threadpool(save_pdf, file, filename, chat_id)
+            contents = await file.read()
+            result = await run_in_threadpool(save_pdf_contents, contents, filename, chat_id, False)
+            safe_chat_id = re.sub(r"[^A-Za-z0-9_-]", "_", chat_id)[:100] or "anonymous"
+            pdf_path = chat_pdf_path(chat_id, result["vendor"], result["filename"])
+            background_tasks.add_task(ingest_pdf, pdf_path, safe_chat_id)
+            return result
         except Exception as exc:
             raise HTTPException(status_code=422, detail=f"Could not ingest PDF: {exc}") from exc
     if content_type in IMAGE_TYPES or Path(filename).suffix.lower() in {".jpg", ".jpeg", ".png", ".gif", ".webp"}:
