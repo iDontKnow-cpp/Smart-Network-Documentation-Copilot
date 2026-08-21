@@ -42,6 +42,7 @@ class GraphState(TypedDict):
     answer: str
     history: List[Dict[str, Any]]
     images: List[str]
+    chat_id: str  # Scopes retrieval to this chat's own uploaded documents
 
 # --- 2. Initialize Core Components ---
 # We use a higher-quality model for the backend routing and generation
@@ -64,15 +65,15 @@ except Exception as e:
 llm = ChatOpenAI(model="gpt-4.1", temperature=0)
 
 # Kubernetes Chroma server configuration:
-chroma_client = chromadb.HttpClient(
-     host=os.getenv("CHROMA_HOST", "chroma-service"),
-     port=int(os.getenv("CHROMA_PORT", 8000)),
-)
+#chroma_client = chromadb.HttpClient(
+#     host=os.getenv("CHROMA_HOST", "chroma-service"),
+#     port=int(os.getenv("CHROMA_PORT", 8000)),
+#)
 
 # Local ChromaDB configuration for running graph.py from this repository.
-#chroma_client = chromadb.PersistentClient(
-#    path=str(Path(__file__).resolve().parent / "chroma_db"),
-#)
+chroma_client = chromadb.PersistentClient(
+    path=str(Path(__file__).resolve().parent / "chroma_db"),
+)
 
 db = Chroma(
     client=chroma_client,
@@ -125,35 +126,85 @@ def route_query(state: GraphState):
         print("   ↳ Decision: External Web Search")
         return {"source": "web_search"}
 
+def _retrieve_chat_scoped_docs(question: str, chat_id: str):
+    """
+    Chunks from PDFs uploaded specifically in this chat session. Used by
+    BOTH the local_db and web_search branches, independent of the router's
+    topic decision — the router only knows about infra topics, so a query
+    like "skills in the resume" gets classified as web_search even when the
+    user has a personal PDF sitting in this exact chat. Without this, that
+    file is only ever visible on the local_db path.
+    """
+    if not chat_id or chat_id == "anonymous":
+        return []
+    try:
+        chat_retriever = db.as_retriever(
+            search_kwargs={"k": 6, "filter": {"chat_id": chat_id}}
+        )
+        return chat_retriever.invoke(question)
+    except Exception as e:
+        print("   ⚠️ Chat-scoped retrieval failed:", type(e).__name__, e)
+        return []
+
+
 def retrieve_local(state: GraphState):
     print("🔍 [Local Search Node] Querying ChromaDB...")
-    docs = retriever.invoke(state["question"])
-    context = "\n\n".join([doc.page_content for doc in docs])
+    question = state["question"]
+    chat_id = state.get("chat_id") or "anonymous"
+
+    # General corpus search — unfiltered, across all ingested docs.
+    general_docs = retriever.invoke(question)
+
+    # Chat-scoped search — chunks from PDFs the user uploaded in *this*
+    # chat (tagged with chat_id in uploads.py). Without this, a query like
+    # "summarize the pdf I uploaded" competes against the entire shared
+    # corpus and the user's own upload can easily lose that similarity
+    # search, especially in a large corpus.
+    chat_docs = _retrieve_chat_scoped_docs(question, chat_id)
+
+    # Chat-specific content goes first so it's weighted more heavily by the
+    # generation prompt; de-dupe in case a chunk shows up in both searches.
+    seen = set()
+    ordered_docs = []
+    for doc in chat_docs + general_docs:
+        if doc.page_content not in seen:
+            seen.add(doc.page_content)
+            ordered_docs.append(doc)
+
+    context = "\n\n".join(doc.page_content for doc in ordered_docs)
     return {"context": context}
 
 def retrieve_web(state):
     question = state["question"]
-    
+    chat_id = state.get("chat_id") or "anonymous"
+
     # Execute Tavily search
     docs = web_search_tool.invoke({"query": question})
-    
+
     # 1. If Tavily returned a plain string
     if isinstance(docs, str):
-        return {"context": docs}
-    
-    # 2. If Tavily returned a list of items (dicts or strings)
-    context_list = []
-    if isinstance(docs, list):
-        for doc in docs:
-            if isinstance(doc, dict):
-                # Safely extract 'content' or fallback to string representation
-                context_list.append(doc.get("content", str(doc)))
-            elif isinstance(doc, str):
-                context_list.append(doc)
-            else:
-                context_list.append(str(doc))
-    
-    context = "\n\n".join(context_list)
+        context_list = [docs]
+    else:
+        # 2. If Tavily returned a list of items (dicts or strings)
+        context_list = []
+        if isinstance(docs, list):
+            for doc in docs:
+                if isinstance(doc, dict):
+                    # Safely extract 'content' or fallback to string representation
+                    context_list.append(doc.get("content", str(doc)))
+                elif isinstance(doc, str):
+                    context_list.append(doc)
+                else:
+                    context_list.append(str(doc))
+
+    # Always also check this chat's own uploaded docs. The router only
+    # classifies by infra topic, so a query like "skills in the resume"
+    # lands here even though it should really be answered from the user's
+    # own uploaded PDF rather than the open web.
+    chat_docs = _retrieve_chat_scoped_docs(question, chat_id)
+    chat_context = [doc.page_content for doc in chat_docs]
+
+    context = "\n\n".join(chat_context + context_list)
     return {"context": context}
 
 
@@ -300,6 +351,7 @@ if __name__ == "__main__":
             "answer": "",
             "history": [],
             "images": [],
+            "chat_id": "diagnostics",
         })
         print(f"\nFinal Output:\n{result1['answer']}\n")
     except Exception as e:
@@ -317,6 +369,7 @@ if __name__ == "__main__":
             "answer": "",
             "history": [],
             "images": [],
+            "chat_id": "diagnostics",
         })
         print(f"\nFinal Output:\n{result2['answer']}")
     except Exception as e:

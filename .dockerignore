@@ -10,3 +10,4 @@ __pycache__/
 docker/
 chroma_db/
 docs/
+tmp/

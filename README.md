@@ -86,7 +86,7 @@ To avoid the cgroup memory limit breaches seen during initial development with l
 * `kubectl` configured with cluster access
 * `metrics-server` installed in-cluster if you want the HPA to actually scale (not included by default on `kubeadm` clusters)
 * API keys for **OpenAI** and **Tavily**
-* **At least 8 GB RAM available to the ingestion container if using the `:v6` backend tag.** The `:v8` tag's file-by-file ingestion is memory-safe on much smaller nodes — see the tag comparison in Roadmap below before choosing.
+* The `:v8` tag's file-by-file ingestion is memory-safe on much smaller nodes — see the tag comparison in Roadmap below before choosing.
 
 ---
 
@@ -224,7 +224,7 @@ Measured with `eval_router.py` against a 49-query test set (real run output, not
 
 Edge cases are the current weak point in routing accuracy and the most likely area to improve next — see Roadmap.
 
-Corpus scale actually ingested and confirmed via ingestion logs: **28 source files (3 Markdown, 25 PDF), 26,748 PDF pages**, split into **~63,700 vector chunks** at the current `chunk_size=1000` / `chunk_overlap=200` splitter settings.
+Corpus scale actually ingested and confirmed via ingestion logs: **42 source files (8 Markdown, 34 PDF), split into **90691 vector chunks** at the current `chunk_size=1000` / `chunk_overlap=200` splitter settings.
 
 ---
 

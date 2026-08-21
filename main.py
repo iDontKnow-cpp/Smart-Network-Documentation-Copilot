@@ -7,7 +7,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 from starlette.concurrency import run_in_threadpool
-from typing import Any
+from typing import Any, cast
 from uploads import IMAGE_TYPES, chat_image_path, chat_pdf_path, cleanup_expired_chat_uploads, delete_chat_uploads, image_data_url, ingest_pdf, save_image, save_pdf_contents
 
 # Import the compiled LangGraph app from Phase 2
@@ -84,14 +84,15 @@ async def chat_endpoint_json(request: ChatRequest):
     """
     This endpoint returns the final result as JSON for clients that do not support SSE.
     """
-    result = agent_app.invoke({
+    result = agent_app.invoke(cast(Any, {
         "question": request.message,
         "context": "",
         "source": "local_db",
         "answer": "",
-        "history": [msg.dict() for msg in request.history],
+        "history": [msg.model_dump() for msg in request.history],
         "images": [image_data_url(str(chat_image_path(request.chat_id, filename))) for filename in request.images],
-    })
+        "chat_id": request.chat_id,
+    }))
     return {
         "answer": result.get("answer"),
         "source": result.get("source"),
@@ -117,14 +118,15 @@ async def chat_endpoint(request: ChatRequest):
         
         # Stream the graph execution step-by-step
         # astream() yields the output of each node as it completes
-        async for output in agent_app.astream({
+        async for output in agent_app.astream(cast(Any, {
             "question": request.message,
             "context": "",
             "source": "local_db",
             "answer": "",
             "history": request_history,
             "images": images,
-        }):
+            "chat_id": request.chat_id,
+        })):
             for node_name, state_update in output.items():
                 
                 # Intercept the Router Node
