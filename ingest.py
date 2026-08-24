@@ -88,15 +88,15 @@ def run_ingestion():
 
     # Local ChromaDB configuration — matches graph.py / uploads.py so ingestion,
     # retrieval, and chat uploads all read/write the same on-disk store.
-    chroma_client = chromadb.PersistentClient(
-        path=str(persist_dir),
-    )
+    #chroma_client = chromadb.PersistentClient(
+    #    path=str(persist_dir),
+    #)
 
     # --- Kubernetes Chroma server configuration (swap in for cluster deployment) ---
-    # chroma_client = chromadb.HttpClient(
-    #     host=os.getenv("CHROMA_HOST", "chroma-service"),
-    #     port=int(os.getenv("CHROMA_PORT", 8000)),
-    # )
+    chroma_client = chromadb.HttpClient(
+        host=os.getenv("CHROMA_HOST", "chroma-service"),
+        port=int(os.getenv("CHROMA_PORT", 8000)),
+    )
 
     db = Chroma(
         client=chroma_client,
@@ -104,8 +104,8 @@ def run_ingestion():
     )
 
     text_splitter = RecursiveCharacterTextSplitter(
-        chunk_size=1000,
-        chunk_overlap=200,
+        chunk_size=800,
+        chunk_overlap=150,
         length_function=len,
         is_separator_regex=False,
     )

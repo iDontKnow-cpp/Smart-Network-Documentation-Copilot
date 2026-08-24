@@ -1,0 +1,13 @@
+# cloudflared-quicktest.yaml
+apiVersion: v1
+kind: Pod
+metadata:
+  name: cloudflared-quicktest
+spec:
+  containers:
+  - name: cloudflared
+    image: cloudflare/cloudflared:latest
+    args:
+      - tunnel
+      - --url
+      - http://rag-service.default.svc.cluster.local:80

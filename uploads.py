@@ -44,15 +44,16 @@ def _vendor_for_pdf(filename: str, text: str) -> str:
 def _vector_store() -> Chroma:
     embeddings = OpenAIEmbeddings(model="text-embedding-3-small")
     # Kubernetes Chroma server configuration:
-    #client = chromadb.HttpClient(
-    #     host=os.getenv("CHROMA_HOST", "chroma-service"),
-    #     port=int(os.getenv("CHROMA_PORT", 8000)),
-    #)
+    client = chromadb.HttpClient(
+        host=os.getenv("CHROMA_HOST", "chroma-service"),
+        port=int(os.getenv("CHROMA_PORT", 8000)),
+    )
 
     # Local ChromaDB configuration for uploads made from this repository.
-    client = chromadb.PersistentClient(
-        path=str(BASE_DIR / "chroma_db"),
-    )
+    #client = chromadb.PersistentClient(
+    #    path=str(BASE_DIR / "chroma_db"),
+    #)
+    
     return Chroma(client=client, embedding_function=embeddings)
 
 

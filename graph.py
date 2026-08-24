@@ -10,6 +10,7 @@ from pydantic import BaseModel, Field
 from langchain_openai import ChatOpenAI, OpenAIEmbeddings
 from langchain_community.vectorstores import Chroma
 from langchain_community.tools.tavily_search import TavilySearchResults
+from langchain_core.documents import Document
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.messages import HumanMessage
 from langgraph.graph import StateGraph, END
@@ -126,6 +127,8 @@ def route_query(state: GraphState):
         print("   ↳ Decision: External Web Search")
         return {"source": "web_search"}
 
+CHAT_DOC_FULL_INCLUDE_THRESHOLD = 20  # chunks
+
 def _retrieve_chat_scoped_docs(question: str, chat_id: str):
     """
     Chunks from PDFs uploaded specifically in this chat session. Used by
@@ -134,10 +137,34 @@ def _retrieve_chat_scoped_docs(question: str, chat_id: str):
     like "skills in the resume" gets classified as web_search even when the
     user has a personal PDF sitting in this exact chat. Without this, that
     file is only ever visible on the local_db path.
+
+    For small chat uploads (a resume, a one-pager), we skip similarity
+    ranking entirely and return EVERY chunk tagged to this chat. A vague
+    question like "skills in the resume" can easily fail to embed close to
+    the one bullet-point chunk that actually has the answer, even though
+    the filter correctly narrowed the search down to just this file — top-k
+    similarity ranking is the wrong tool when the whole document is small
+    enough to just include outright. Larger uploads still fall back to
+    similarity ranking so context doesn't blow up with irrelevant chunks.
     """
     if not chat_id or chat_id == "anonymous":
         return []
     try:
+        # Metadata-only fetch — no embedding similarity involved, so this
+        # reliably returns every chunk tagged to this chat regardless of
+        # how well it embeds against the question.
+        all_chunks = db.get(where={"chat_id": chat_id}, include=["documents"])
+        documents = all_chunks.get("documents") or []
+
+        if 0 < len(documents) <= CHAT_DOC_FULL_INCLUDE_THRESHOLD:
+            print(f"   ↳ Including all {len(documents)} chat-scoped chunks (below threshold, skipping similarity ranking).")
+            return [Document(page_content=text) for text in documents]
+
+        if len(documents) == 0:
+            return []
+
+        # Larger chat uploads: fall back to similarity ranking so context
+        # doesn't blow up with mostly-irrelevant chunks from a big document.
         chat_retriever = db.as_retriever(
             search_kwargs={"k": 6, "filter": {"chat_id": chat_id}}
         )
